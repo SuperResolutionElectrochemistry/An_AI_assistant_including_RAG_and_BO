@@ -4,36 +4,19 @@ from pathlib import Path
 from langchain_community.vectorstores import Chroma
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
-# ✅ 注意：下面几个都从 langchain_core 来，而不是 langchain.chains
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableParallel, RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
-from dotenv import load_dotenv
-load_dotenv()
 
 
-DB_DIR = Path(r"E:\AMsystem\Project\QCH-RAG\db\8")
+DB_DIR = Path("")
 
 print("DB_DIR =", DB_DIR, type(DB_DIR))
 
 
 def load_vectorstore():
-    """加载已经构建好的 Chroma 向量库"""
-    if "OPENAI_API_KEY" not in os.environ:
-        print("❌ 未检测到 OPENAI_API_KEY，请先设置环境变量。")
-        return None
-    embedding_api_key = os.getenv("OPENAI_EMBEDDING_API_KEY")
-    embedding_base_url = os.getenv("OPENAI_EMBEDDING_BASE_URL")
-    if not embedding_api_key or not embedding_base_url:
-        print("❌ 未检测到 OPENAI_EMBEDDING_API_KEY 或 OPENAI_EMBEDDING_BASE_URL，请在 .env 或系统环境变量中配置。")
-        return
-    if not DB_DIR.exists():
-        print(f"❌ 未找到向量库目录：{DB_DIR}，请先运行 build_knowledge_base.py 构建知识库。")
-        return None
-
-    # embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
     embeddings = OpenAIEmbeddings(
-        model="text-embedding-3-large",  # 如果你那边是别的名字，就改成对应的
+        model="text-embedding-3-large",
         api_key=embedding_api_key,
         base_url=embedding_base_url,
     )
@@ -46,65 +29,21 @@ def load_vectorstore():
 
 
 def build_rag_chain():
-    """用 LCEL 手工搭一个 RAG 链，避免使用 RetrievalQA"""
-
     vectorstore = load_vectorstore()
     if vectorstore is None:
         return None
 
     retriever = vectorstore.as_retriever(search_kwargs={"k": 10})
 
-
-    # 读取聊天模型用的 key / base_url
-    # 优先级：OPENAI_API_KEY > OPENAI_CHAT_API_KEY > OPENAI_EMBEDDING_API_KEY
-    chat_api_key = (
-        os.getenv("OPENAI_API_KEY")
-        or os.getenv("OPENAI_CHAT_API_KEY")
-        or os.getenv("OPENAI_EMBEDDING_API_KEY")
-    )
-    chat_base_url = (
-        os.getenv("OPENAI_BASE_URL")
-        or os.getenv("OPENAI_CHAT_BASE_URL")
-        or os.getenv("OPENAI_EMBEDDING_BASE_URL")
-    )
-
-    if chat_api_key is None:
-        print("❌ 没有找到用于 ChatOpenAI 的 api_key，请设置：OPENAI_API_KEY 或 OPENAI_CHAT_API_KEY。")
-        return None
-
-    # 创建 LLM（显式传入 api_key / base_url）
+    # 创建 LLM
     llm = ChatOpenAI(
-        model="gpt-4o",   # 或 "gpt-4o-mini"
+        model="gpt-4o", 
         temperature=0.2,
         api_key=chat_api_key,
-        base_url=chat_base_url,   # 如果用官方 OpenAI，可以留空或不传
+        base_url=chat_base_url,
     )
 
-    # Prompt：把 context + question 填进去
-#     prompt = ChatPromptTemplate.from_template(
-#         """
-# 你是 Chatalyst，是一名专注于高熵合金（HEA）和析氢反应（HER）的科研助手。
-# 你可以访问到的“上下文”来自以下几类来源：
-# - 高熵合金/HER 相关文献的 PDF
-# - 我整理的文献数据表（包括元素组合、过电位、塔菲尔斜率等）
-# - 我自己发表的相关文章（实验方法和流程）
-#
-# 请严格遵守以下规则回答：
-# 1. 尽量基于给定的上下文（context）作答，不要凭空杜撰文献中的具体数字。
-# 2. 如果上下文中没有直接答案，请明确说明“在当前知识库中没有直接信息”，然后再给出一般性的推断。
-# 3. 回答时用英文，结构化表达（可以分点列出）。
-# 4. 当用户让你“设计实验方案”时，优先模仿我自己文章中的实验方法和参数风格。
-#
-# --------------------
-# 【检索到的相关内容（context）】：
-# {context}
-# --------------------
-# 【用户问题】：
-# {question}
-# --------------------
-# 请给出你的专业解答：
-# """
-#     )
+    
     prompt = ChatPromptTemplate.from_template(
         """
 You are Chatalyst, a research assistant specializing in high-entropy alloys (HEAs) and the hydrogen evolution reaction (HER).
@@ -161,10 +100,6 @@ Please provide your expert answer:
 
 def chat_loop():
     rag_chain = build_rag_chain()
-    if rag_chain is None:
-        return
-
-    print("✅ RAG 助手已启动。输入你的问题，输入 q 退出。\n")
 
     while True:
         question = input("Human input：").strip()
@@ -174,16 +109,13 @@ def chat_loop():
             print("再见！")
             break
 
-        # 调用链：把 question 作为输入
         try:
             answer = rag_chain.invoke(question)
         except Exception as e:
-            print("❌ 调用 RAG 链出错：", e)
+            print("调用 RAG 链出错：", e)
             continue
 
         print("\nAI Assistant：", answer)
         print("\n" + "-" * 60 + "\n")
 
 
-if __name__ == "__main__":
-    chat_loop()
